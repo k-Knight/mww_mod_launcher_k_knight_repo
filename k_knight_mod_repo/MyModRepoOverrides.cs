@@ -93,6 +93,10 @@ namespace MyModRepoOverrides {
 
         [HarmonyPostfix]
         public static void Postfix(System.Windows.Forms.Form __instance) {
+            string repoFile = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "mod_repositories.txt");
+            if (!System.IO.File.Exists(repoFile)) {
+                System.IO.File.WriteAllText(repoFile, "https://raw.githubusercontent.com/k-Knight/mww-mods-build/master/\n");
+            }
             ModDownloadHelper.DownloadModList();
         }
     }
