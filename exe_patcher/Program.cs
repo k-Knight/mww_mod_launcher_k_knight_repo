@@ -2,12 +2,23 @@
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using Mono.Cecil;
-using Mono.Cecil.Cil;
-using ILRepacking;
 
 class Program {
     static void Main(string[] args) {
+        AppDomain.CurrentDomain.AssemblyResolve += ResolveEmbeddedAssemblies;
+
+        try {
+            ExecutePatcher(args);
+        }
+        catch (Exception ex) {
+            Console.WriteLine($"Patcher Error: {ex.Message}");
+            if (ex.StackTrace != null)
+                Console.WriteLine(ex.StackTrace);
+            Console.ReadLine();
+        }
+    }
+
+    static void ExecutePatcher(string[] args) {
         string appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         string targetDir = Path.Combine(appDataPath, "WizardWarsModLoader");
 
@@ -19,119 +30,139 @@ class Program {
         if (!File.Exists(targetExe)) {
             Console.WriteLine($"[ERROR] Target executable not found at: {targetExe}");
             Console.ReadLine();
-
             return;
         }
 
-        try {
-            Console.WriteLine("[INSTALLER] Extracting embedded payload and dependencies...");
+        Console.WriteLine("[INSTALLER] Extracting embedded payload and dependencies...");
 
-            var currentAssembly = Assembly.GetExecutingAssembly();
-            string[] allResourceNames = currentAssembly.GetManifestResourceNames();
+        var currentAssembly = Assembly.GetExecutingAssembly();
+        string[] allResourceNames = currentAssembly.GetManifestResourceNames();
 
-            string payloadResourceName = allResourceNames.FirstOrDefault(name => name.IndexOf("k_knight_mod_repo.dll", StringComparison.OrdinalIgnoreCase) >= 0);
-            string harmonyResourceName = allResourceNames.FirstOrDefault(name => name.IndexOf("0Harmony.dll", StringComparison.OrdinalIgnoreCase) >= 0);
+        string payloadResourceName = allResourceNames.FirstOrDefault(name => name.IndexOf("k_knight_mod_repo.dll", StringComparison.OrdinalIgnoreCase) >= 0);
+        string harmonyResourceName = allResourceNames.FirstOrDefault(name => name.IndexOf("0Harmony.dll", StringComparison.OrdinalIgnoreCase) >= 0);
 
-            if (payloadResourceName == null || harmonyResourceName == null) {
-                Console.WriteLine("\n[ERROR] Could not find embedded resources. Here are the files actually embedded in this EXE:");
+        if (payloadResourceName == null || harmonyResourceName == null) {
+            Console.WriteLine("\n[ERROR] Could not find embedded resources. Here are the files actually embedded in this EXE:");
 
-                if (allResourceNames.Length == 0)
-                    Console.WriteLine(" -> (No resources found at all! Check your Build Action in Visual Studio)");
-                else {
-                    foreach (var name in allResourceNames)
-                        Console.WriteLine($" -> {name}");
-                }
-
-                throw new Exception("Resource extraction failed. Ensure files are marked as 'Embedded Resource' in their file properties.");
+            if (allResourceNames.Length == 0)
+                Console.WriteLine(" -> (No resources found at all! Check your Build Action in Visual Studio)");
+            else {
+                foreach (var name in allResourceNames)
+                    Console.WriteLine($" -> {name}");
             }
 
-            using (Stream payloadStream = currentAssembly.GetManifestResourceStream(payloadResourceName))
-            using (Stream harmonyStream = currentAssembly.GetManifestResourceStream(harmonyResourceName)) {
+            throw new Exception("Resource extraction failed. Ensure files are marked as 'Embedded Resource' in their file properties.");
+        }
 
-                if (payloadStream == null || harmonyStream == null)
-                    throw new Exception("Could not find embedded resources. Check your namespace and resource names.");
+        using (Stream payloadStream = currentAssembly.GetManifestResourceStream(payloadResourceName))
+        using (Stream harmonyStream = currentAssembly.GetManifestResourceStream(harmonyResourceName)) {
+
+            if (payloadStream == null || harmonyStream == null)
+                throw new Exception("Could not find embedded resources. Check your namespace and resource names.");
+
+            Console.WriteLine("[CECIL] Injecting single bootstrap connection point...");
+
+            var payloadAssembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(payloadStream);
+            var bootMethod = payloadAssembly.MainModule.Types
+                .First(t => t.Namespace == "MyModRepoOverrides" && t.Name == "OverridesBootstrap")
+                .Methods.First(m => m.Name == "Start");
+
+            using (var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(targetExe, new Mono.Cecil.ReaderParameters { ReadWrite = true })) {
+                Console.WriteLine("[INSTALLER] Publicizing target executable in memory...");
+
+                foreach (var type in assembly.MainModule.Types) {
+                    if (type.IsNotPublic)
+                        type.IsPublic = true;
+                    if (type.IsNestedPrivate || type.IsNestedAssembly)
+                        type.IsNestedPublic = true;
+
+                    foreach (var field in type.Fields)
+                        if (field.IsPrivate || field.IsAssembly)
+                            field.IsPublic = true;
+
+                    foreach (var method in type.Methods)
+                        if (method.IsPrivate || method.IsAssembly)
+                            method.IsPublic = true;
+                }
 
                 Console.WriteLine("[CECIL] Injecting single bootstrap connection point...");
+                var il = assembly.EntryPoint.Body.GetILProcessor();
+                il.InsertBefore(assembly.EntryPoint.Body.Instructions.First(), il.Create(Mono.Cecil.Cil.OpCodes.Call, assembly.MainModule.ImportReference(bootMethod)));
 
-                var payloadAssembly = AssemblyDefinition.ReadAssembly(payloadStream);
-                var bootMethod = payloadAssembly.MainModule.Types
-                    .First(t => t.Namespace == "MyModRepoOverrides" && t.Name == "OverridesBootstrap")
-                    .Methods.First(m => m.Name == "Start");
-
-                using (var assembly = AssemblyDefinition.ReadAssembly(targetExe, new ReaderParameters { ReadWrite = true })) {
-                    Console.WriteLine("[INSTALLER] Publicizing target executable in memory...");
-
-                    foreach (var type in assembly.MainModule.Types) {
-                        if (type.IsNotPublic)
-                            type.IsPublic = true;
-                        if (type.IsNestedPrivate || type.IsNestedAssembly)
-                            type.IsNestedPublic = true;
-
-                        foreach (var field in type.Fields)
-                            if (field.IsPrivate || field.IsAssembly)
-                                field.IsPublic = true;
-
-                        foreach (var method in type.Methods)
-                            if (method.IsPrivate || method.IsAssembly)
-                                method.IsPublic = true;
-                    }
-
-                    Console.WriteLine("[CECIL] Injecting single bootstrap connection point...");
-                    var il = assembly.EntryPoint.Body.GetILProcessor();
-                    il.InsertBefore(assembly.EntryPoint.Body.Instructions.First(), il.Create(OpCodes.Call, assembly.MainModule.ImportReference(bootMethod)));
-
-                    if (assembly.Name.HasPublicKey) {
-                        assembly.Name.PublicKey = assembly.Name.PublicKeyToken = null;
-                        assembly.MainModule.Attributes &= ~ModuleAttributes.StrongNameSigned;
-                    }
-
-                    assembly.Write(intermediateExe);
+                if (assembly.Name.HasPublicKey) {
+                    assembly.Name.PublicKey = assembly.Name.PublicKeyToken = null;
+                    assembly.MainModule.Attributes &= ~Mono.Cecil.ModuleAttributes.StrongNameSigned;
                 }
 
-                Console.WriteLine("[ILREPACK] Merging types from memory streams...");
-
-                string tempPayloadPath = Path.Combine(targetDir, "temp_payload.dll");
-                string tempHarmonyPath = Path.Combine(targetDir, "temp_harmony.dll");
-
-                payloadStream.Position = 0;
-                harmonyStream.Position = 0;
-
-                using (var fs = File.Create(tempPayloadPath)) payloadStream.CopyTo(fs);
-                using (var fs = File.Create(tempHarmonyPath)) harmonyStream.CopyTo(fs);
-
-                var repackOptions = new RepackOptions {
-                    OutputFile = outputExe,
-                    TargetKind = ILRepack.Kind.WinExe,
-                    Internalize = true,
-                    CopyAttributes = true,
-                    InputAssemblies = new string[] { intermediateExe, tempPayloadPath, tempHarmonyPath }
-                };
-
-                var customLogger = new CustomLogger();
-                var repacker = new ILRepack(repackOptions, customLogger);
-                repacker.Repack();
-
-                SafeDelete(intermediateExe);
-                SafeDelete(tempPayloadPath);
-                SafeDelete(tempHarmonyPath);
-
-                Console.WriteLine("[SUCCESS] Mod Loader successfully updated and bundled in AppData!");
+                assembly.Write(intermediateExe);
             }
-        }
-        catch (Exception ex) {
-            Console.WriteLine($"Patcher Error: {ex.Message}");
 
-            if (ex.StackTrace != null)
-                Console.WriteLine(ex.StackTrace);
+            Console.WriteLine("[ILREPACK] Merging types from memory streams...");
+
+            string tempPayloadPath = Path.Combine(targetDir, "temp_payload.dll");
+            string tempHarmonyPath = Path.Combine(targetDir, "0Harmony.dll");
+
+            payloadStream.Position = 0;
+            harmonyStream.Position = 0;
+
+            using (var fs = File.Create(tempPayloadPath)) payloadStream.CopyTo(fs);
+            using (var fs = File.Create(tempHarmonyPath)) harmonyStream.CopyTo(fs);
+
+            var repackOptions = new ILRepacking.RepackOptions {
+                OutputFile = outputExe,
+                TargetKind = ILRepacking.ILRepack.Kind.WinExe,
+                Internalize = true,
+                CopyAttributes = true,
+                InputAssemblies = new string[] { intermediateExe, tempPayloadPath, tempHarmonyPath },
+
+                SearchDirectories = new string[] { targetDir }
+            };
+
+            var customLogger = new CustomLogger();
+            var repacker = new ILRepacking.ILRepack(repackOptions, customLogger);
+            repacker.Repack();
+
+            SafeDelete(intermediateExe);
+            SafeDelete(tempPayloadPath);
+            SafeDelete(tempHarmonyPath);
+
+            Console.WriteLine("[SUCCESS] Mod Loader successfully updated and bundled in AppData!");
         }
         Console.ReadLine();
+    }
+
+    static Assembly ResolveEmbeddedAssemblies(object sender, ResolveEventArgs args) {
+        string assemblyName = new AssemblyName(args.Name).Name;
+
+        var currentAssembly = Assembly.GetExecutingAssembly();
+        string[] resourceNames = currentAssembly.GetManifestResourceNames();
+
+        string targetResource = resourceNames.FirstOrDefault(name =>
+            name.EndsWith($".{assemblyName}.dll", StringComparison.OrdinalIgnoreCase) ||
+            name.EndsWith($"_ILRepack.dll", StringComparison.OrdinalIgnoreCase) && assemblyName.Equals("ILRepack", StringComparison.OrdinalIgnoreCase)
+        );
+
+        if (targetResource == null && assemblyName.Equals("ILRepack", StringComparison.OrdinalIgnoreCase)) {
+            targetResource = resourceNames.FirstOrDefault(name => name.IndexOf("ILRepack.dll", StringComparison.OrdinalIgnoreCase) >= 0);
+        }
+
+        if (targetResource == null) return null;
+
+        using (var stream = currentAssembly.GetManifestResourceStream(targetResource)) {
+            if (stream == null) return null;
+
+            byte[] assemblyData = new byte[stream.Length];
+            stream.Read(assemblyData, 0, assemblyData.Length);
+            return Assembly.Load(assemblyData);
+        }
     }
 
     static void SafeDelete(string path) {
         try {
             if (File.Exists(path))
                 File.Delete(path);
-        } catch { }
+        }
+        catch { }
     }
 }
 

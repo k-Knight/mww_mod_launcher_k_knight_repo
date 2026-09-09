@@ -74,6 +74,21 @@
     <EmbeddedResource Include="..\bin\$(Configuration)\k_knight_mod_repo.dll">
       <Link>k_knight_mod_repo.dll</Link>
     </EmbeddedResource>
+    <EmbeddedResource Include="..\packages\ILRepack.Lib.2.0.48\lib\net472\ILRepack.dll">
+      <Link>ILRepack.dll</Link>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\packages\Mono.Cecil.0.11.6\lib\net40\Mono.Cecil.dll">
+      <Link>Mono.Cecil.dll</Link>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\packages\Mono.Cecil.0.11.6\lib\net40\Mono.Cecil.Mdb.dll">
+      <Link>Mono.Cecil.Mdb.dll</Link>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\packages\Mono.Cecil.0.11.6\lib\net40\Mono.Cecil.Pdb.dll">
+      <Link>Mono.Cecil.Pdb.dll</Link>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\packages\Mono.Cecil.0.11.6\lib\net40\Mono.Cecil.Rocks.dll">
+      <Link>Mono.Cecil.Rocks.dll</Link>
+    </EmbeddedResource>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
