@@ -65,7 +65,15 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
-    <None Include="packages.config" />
+    <EmbeddedResource Include="packages.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="..\bin\$(Configuration)\0Harmony.dll">
+      <Link>0Harmony.dll</Link>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\bin\$(Configuration)\k_knight_mod_repo.dll">
+      <Link>k_knight_mod_repo.dll</Link>
+    </EmbeddedResource>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

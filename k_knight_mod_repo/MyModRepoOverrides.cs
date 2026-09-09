@@ -176,46 +176,52 @@ namespace MyModRepoOverrides {
 
                                 try {
                                     Console.ForegroundColor = ConsoleColor.Blue;
-                                    Console.WriteLine($"[MOD] Sequentially executing parsed files for repository: {repoPrefix}");
+                                    Console.WriteLine($"[MOD] Executing parsed files in parallel for repository: {repoPrefix}");
                                     Console.ResetColor();
 
                                     string[] lines = rawList.Split(new char[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
 
-                                    foreach (string text in lines) {
+                                    Parallel.ForEach(lines, text => {
                                         try {
                                             string trimmedText = text.Trim();
 
                                             if (string.IsNullOrEmpty(trimmedText))
-                                                continue;
+                                                return;
 
                                             string downloadPath = Path.Combine(FileHelper.DOWNLOAD_FOLDER, trimmedText);
 
-                                            Console.ForegroundColor = ConsoleColor.Cyan;
-                                            Console.WriteLine($"[SEQUENTIAL PROCESS] Processing: {trimmedText} from {repoPrefix}");
-                                            Console.ResetColor();
+                                            lock (CollectionLock) {
+                                                Console.ForegroundColor = ConsoleColor.Cyan;
+                                                Console.WriteLine($"[PARALLEL PROCESS] Processing: {trimmedText} from {repoPrefix}");
+                                                Console.ResetColor();
+                                            }
 
                                             string assetUrl = repoPrefix.Contains("NylonAphro") ? WebInterface.MOD_SAMPLE_PREFIX + trimmedText : repoPrefix + "mod_previews/" + trimmedText;
 
                                             WebInterface.RetrieveFile(assetUrl, downloadPath);
 
-                                            Modpack modpack = ModManager.ImportSampleModpack(downloadPath);
-                                            if (modpack != null) {
-                                                string currentDownloadLink = repoPrefix.Contains("NylonAphro") ? WebInterface.MOD_PREFIX + modpack.Name + ".mww" : repoPrefix + "mod_files/" + modpack.Name + ".mww";
-                                                CustomModpack custom_pack = new CustomModpack(modpack, currentDownloadLink);
+                                            lock (CollectionLock) {
+                                                Modpack modpack = ModManager.ImportSampleModpack(downloadPath);
+                                                if (modpack != null) {
+                                                    string currentDownloadLink = repoPrefix.Contains("NylonAphro") ? WebInterface.MOD_PREFIX + modpack.Name + ".mww" : repoPrefix + "mod_files/" + modpack.Name + ".mww";
+                                                    CustomModpack custom_pack = new CustomModpack(modpack, currentDownloadLink);
 
-                                                downloadedModpacks.AddMod(custom_pack);
+                                                    downloadedModpacks.AddMod(custom_pack);
+                                                }
                                             }
                                         }
                                         catch (Exception itemEx) {
-                                            Console.ForegroundColor = ConsoleColor.Red;
-                                            Console.WriteLine($"[ITEM ERROR] Failed fetching file {text.Trim()}: {itemEx.Message}");
-                                            Console.ResetColor();
+                                            lock (CollectionLock) {
+                                                Console.ForegroundColor = ConsoleColor.Red;
+                                                Console.WriteLine($"[ITEM ERROR] Failed fetching file {text.Trim()}: {itemEx.Message}");
+                                                Console.ResetColor();
+                                            }
                                         }
-                                    }
+                                    });
                                 }
                                 catch (Exception repoEx) {
                                     Console.ForegroundColor = ConsoleColor.Red;
-                                    Console.WriteLine($"[REPO PROCESSING ERROR] Failed processing sequential repository loop {repoPrefix}: {repoEx.Message}");
+                                    Console.WriteLine($"[REPO PROCESSING ERROR] Failed processing parallel repository loop {repoPrefix}: {repoEx.Message}");
                                     lock (CollectionLock) { Console.ResetColor(); }
                                 }
                             }
@@ -241,7 +247,6 @@ namespace MyModRepoOverrides {
                     };
 
                     backgroundWorker.RunWorkerAsync();
-
                 }
                 catch (Exception ex) {
                     Console.ForegroundColor = ConsoleColor.Red;

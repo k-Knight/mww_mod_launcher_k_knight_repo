@@ -3,8 +3,8 @@
 A simple patcher for the Magicka Wizard Wars mod launcher that overrides mod repository URLs using Mono.Cecil and Harmony.
 <div>
   <h3>
-    <a href="https://raw.githubusercontent.com/k-Knight/mww_mod_launcher_k_knight_repo/master/Magicka%20Wizard%20Wars%20Mod%20Loader.exe">
-      📦 <code>[ DOWNLOAD THE LAUNCHER ]</code>
+    <a href="https://raw.githubusercontent.com/k-Knight/mww_mod_launcher_k_knight_repo/master/MWW_MOD_LAUNCHER_PATCHER.exe">
+      📦 <code>[ DOWNLOAD THE PATCHER ]</code>
     </a>
   </h3>
 </div>
